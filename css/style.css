@@ -24,4 +24,4 @@ input,select,textarea{width:100%;padding:.5rem;border:1px solid var(--bd);border
 table{width:100%;border-collapse:collapse}td,th{padding:.4rem;border-bottom:1px solid var(--bd);text-align:left}.tw{overflow-x:auto}
 footer{text-align:center;padding:1.5rem;font-size:.9rem}
 @media print{.top,footer,.btn{display:none}}
-.logo-icon{flex-shrink:0;color:var(--warn);vertical-align:middle}
+
