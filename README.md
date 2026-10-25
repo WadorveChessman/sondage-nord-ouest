@@ -1,13 +1,7 @@
-# SONDAGE NORD-OUEST — démarrage local
+SONDAGE NORD-OUEST
+Plateforme de sondages d'opinion citoyenne pour le département du Nord-Ouest (Haïti). 
+Application front-end autonome, sans dépendance externe, sans build, fonctionnant entièrement côté navigateur en mode démonstration locale.
 
-1. Ouvrir le dossier dans VS Code.
-2. Extension **Live Server** → clic droit sur `index.html` → *Open with Live Server*.
-   (Fonctionne aussi en double-cliquant `index.html` : aucun module, aucun build.)
-3. Administration : lien « Administration » en pied de page (`#/admin`). Au premier accès, vous choisissez votre mot de passe.
-
-Données dans le `localStorage` du navigateur (mode démo local). Aucun candidat ni résultat fictif : ajoutez-les via l'administration.
-
-## Limites
-- Mode local : aucune vraie sécurité (tout est dans le navigateur) ; 1 participation par navigateur et par sondage.
-- Production : exécuter `supabase/schema.sql`, puis brancher le frontend (non fait).
-- Vérifier les rattachements communes/arrondissements ; sections communales non incluses.
+Avertissement — Cet outil mesure les préférences déclarées des utilisateurs de la plateforme. 
+Il ne constitue ni un échantillon représentatif de la population, ni un résultat électoral officiel, 
+et n'entretient aucun lien avec le Conseil Électoral Provisoire (CEP).
