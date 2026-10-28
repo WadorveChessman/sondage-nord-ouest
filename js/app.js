@@ -103,12 +103,12 @@
     const act = db.polls.filter(p => status(p) === 'actif');
     return `<section class="hero"><small>L'opinion citoyenne au cœur de la démocratie</small><h1>Qui souhaitez-vous voir représenter votre commune ?</h1><p>Exprimez votre préférence dans les sondages d'opinion du Nord-Ouest d'Haïti.</p><a class="btn" style="background:var(--warn)" href="#/sondages">Participer maintenant</a> <a class="btn alt" href="#/resultats">Consulter les résultats</a></section>
     <h2>En chiffres</h2><div class="grid">${[
-      ['Candidats publiés', db.cands.filter(c => c.pub).length],
+      ['Candidats', db.cands.filter(c => c.pub).length],
       ['Sondages actifs', act.length],
       ['Participations', db.resp.length],
       ['Communes couvertes', new Set(db.polls.map(p => p.commune).filter(Boolean)).size]
     ].map(([l, v]) => `<div class="card"><div class="stat">${v}</div>${l}</div>`).join('')}</div>
-    <h2>Sondages en cours</h2><div class="grid">${act.map(pollCard).join('') || '<p class="msg info">Aucun sondage actif. L\'administrateur doit en publier un.</p>'}</div>
+    <h2>Sondages en cours</h2><div class="grid">${act.map(pollCard).join('') || '<p class="msg info">Aucun sondage actif.</p>'}</div>
     <h2>Candidats à découvrir</h2><div class="grid">${db.cands.filter(c => c.pub).slice(0, 6).map(candCard).join('') || '<p class="msg info">Aucun candidat publié pour le moment.</p>'}</div>`;
   };
 
@@ -133,9 +133,9 @@
 
   P['/resultats'] = () => `<h1>Résultats</h1>${pub().map(p => `<div class="card"><b>${esc(p.title)}</b> <span class="tag">${status(p)}</span>${bars(p)}</div>`).join('') || '<p class="msg info">Aucun sondage.</p>'}<p class="muted">Ces pourcentages décrivent les participants de la plateforme, pas la population.</p>`;
 
-  P['/methodologie'] = () => `<h1>Méthodologie</h1><div class="card"><p>Plateforme de sondages d'opinion <b>non officielle</b> : aucun lien avec le CEP.</p><p>Pourcentage = préférences valides du candidat ÷ total des préférences valides × 100 (0 si aucune participation).</p><p>Les participants ne sont pas un échantillon représentatif. En mode local, une participation par navigateur et par sondage est autorisée ; cela ne garantit pas une personne unique (on peut vider les données du navigateur).</p></div>`;
+  P['/methodologie'] = () => `<h1>Méthodologie</h1><div class="card"><p>Plateforme de sondages d'opinion <b>non officielle</b> : aucun lien avec le CEP.</p><p></p><p>Les participants ne sont pas un échantillon représentatif.</p></div>`;
 
-  P['/apropos'] = () => `<h1>À propos, confidentialité, contact</h1><div class="card"><p>SONDAGE NORD-OUEST — « L'opinion citoyenne au cœur de la démocratie ».</p><p>Aucune donnée personnelle n'est demandée. Une clé aléatoire est conservée dans votre navigateur pour limiter les participations répétées.</p><p>Contact : à renseigner par l'administrateur.</p></div>`;
+  P['/apropos'] = () => `<h1>À propos, confidentialité, contact</h1><div class="card"><p>SONDAGE NORD-OUEST — « L'opinion citoyenne au cœur de la démocratie ».</p><p>Aucune donnée personnelle n'est demandée.</p></div>`;
 
   P['/participer'] = id => {
     const p = db.polls.find(x => x.id === id);
