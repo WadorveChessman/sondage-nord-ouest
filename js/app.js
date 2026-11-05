@@ -1,5 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
+   Version corrigée : tables, colonnes, rôles, RPC.
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -23,59 +24,143 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     'Bombardopolis', 'Baie-de-Henne', 'Jean-Rabel'
   ];
 
-  /* ============ CACHE LOCAL ============ */
-  // db reste en mémoire comme cache, mais la source de vérité est Supabase
+  // Correspondance entre libellés FR (utilisés dans l'UI) et codes SQL
+  const POSITION_LABELS = {
+    depute: 'Député',
+    magistrat_communal: 'Magistrat communal',
+    casec: 'CASEC',
+    senateur: 'Sénateur'
+  };
+  const POSITION_CODES = {
+    'Député': 'depute',
+    'Magistrat communal': 'magistrat_communal',
+    'CASEC': 'casec',
+    'Sénateur': 'senateur'
+  };
+
+  /* ============ ÉTAT GLOBAL ============ */
   let db = { cands: [], polls: [], resp: [], log: [] };
   let currentSession = null;
+  let currentRole = null; // 'admin' | 'user' | null
+
+  const isAdmin = () => currentRole === 'admin';
 
   /* ============ IDENTITÉ UTILISATEUR ============ */
-  // Clé anti-double-vote stockée localement
   const myKey = () => {
     let k = localStorage.getItem('snw_key');
     if (!k) { k = uid() + uid(); localStorage.setItem('snw_key', k); }
     return k;
   };
 
-  /* ============ ÉTAT ADMIN ============ */
-  const isAdmin = () => !!currentSession;
+  /* ============ RÉCUPÉRATION DU RÔLE ============ */
+  async function fetchMyRole() {
+    if (!currentSession) { currentRole = null; return null; }
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', currentSession.user.id)
+      .maybeSingle();
+    if (error || !data || data.is_active === false) {
+      currentRole = null;
+      return null;
+    }
+    currentRole = data.role;
+    return currentRole;
+  }
 
-  /* ============ CHARGEMENT DES DONNÉES DEPUIS SUPABASE ============ */
+  /* ============ CHARGEMENT DES DONNÉES ============ */
   async function loadData() {
     try {
-      const [candsRes, pollsRes, respRes] = await Promise.all([
-        supabase.from('cands').select('*').order('created_at'),
+      const [candsRes, pollsRes, respRes, pcsRes] = await Promise.all([
+        supabase.from('candidates').select('*').order('created_at'),
         supabase.from('polls').select('*').order('created_at', { ascending: false }),
-        supabase.from('resp').select('*')
+        supabase.from('poll_responses').select('*'),
+        supabase.from('poll_candidates').select('*')
       ]);
 
       if (candsRes.error) throw candsRes.error;
       if (pollsRes.error) throw pollsRes.error;
       if (respRes.error) throw respRes.error;
+      if (pcsRes.error) throw pcsRes.error;
 
-      db.cands = candsRes.data || [];
-      db.polls = pollsRes.data || [];
-      db.resp  = respRes.data || [];
+      // Association poll_id -> [candidate_id, ...]
+      const byPoll = {};
+      (pcsRes.data || []).forEach(pc => {
+        (byPoll[pc.poll_id] = byPoll[pc.poll_id] || []).push(pc.candidate_id);
+      });
+
+      db.cands = (candsRes.data || []).map(c => ({
+        id: c.id,
+        first: c.first_name,
+        last: c.last_name,
+        party: '',
+        post: POSITION_LABELS[c.position_type] || c.position_type,
+        post_code: c.position_type,
+        commune: c.commune_id || '',
+        photo: c.photo_url || '',
+        bio: c.biography || '',
+        pub: c.publication_status === 'published',
+        _raw: c
+      }));
+
+      db.polls = (pollsRes.data || []).map(p => ({
+        id: p.id,
+        title: p.title,
+        post: POSITION_LABELS[p.position_type] || p.position_type,
+        post_code: p.position_type,
+        commune: p.commune_id || '',
+        start: p.starts_at,
+        end: p.ends_at,
+        vis: p.results_visibility === 'live' ? 'live' : 'after',
+        min: p.minimum_publication_count || 0,
+        status: p.status,
+        cands: byPoll[p.id] || [],
+        _raw: p
+      }));
+
+      db.resp = (respRes.data || []).map(r => ({
+        id: r.id,
+        poll: r.poll_id,
+        cand: r.candidate_id,
+        voter_key: r.anonymous_key_hash || r.participant_user_id || '',
+        at: r.created_at
+      }));
     } catch (e) {
       console.error('[Supabase] loadData', e);
       app.innerHTML = `<p class="msg err">Erreur de connexion à la base de données : ${esc(e.message)}</p>`;
+      throw e;
     }
   }
 
   async function loadLogs() {
     const { data, error } = await supabase
-      .from('logs').select('*').order('at', { ascending: false }).limit(100);
-    if (!error) db.log = (data || []).map(l => ({ a: l.action, d: new Date(l.at).toLocaleString('fr-FR') }));
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (!error) {
+      db.log = (data || []).map(l => ({
+        a: l.action,
+        d: new Date(l.created_at).toLocaleString('fr-FR')
+      }));
+    }
   }
 
   async function pushLog(action) {
-    await supabase.from('logs').insert({ action });
+    await supabase.from('audit_logs').insert({
+      actor_user_id: currentSession?.user?.id || null,
+      action,
+      entity_type: 'admin'
+    });
     await loadLogs();
   }
 
-  /* ============ LOGIQUE MÉTIER (inchangée) ============ */
+  /* ============ LOGIQUE MÉTIER ============ */
   const status = p => {
     if (p.status === 'draft') return 'brouillon';
     if (p.status === 'closed') return 'fermé';
+    if (p.status === 'suspended') return 'suspendu';
+    if (p.status === 'archived') return 'archivé';
     const n = Date.now();
     return n < new Date(p.start) ? 'programmé' : n > new Date(p.end) ? 'terminé' : 'actif';
   };
@@ -191,21 +276,22 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     return `<h1>${esc(p.title)}</h1><p>${esc(p.post)} — ${esc(terr(p.commune))}</p><div class="grid">${cs.map(c => `<div class="pick" data-id="${c.id}">${candCard(c)}</div>`).join('') || '<p class="msg info">Aucun candidat publié dans ce sondage.</p>'}</div><p id="rec" class="msg info">Sélectionnez un candidat.</p><p class="muted">Confirmation explicite : ce choix sera enregistré définitivement.</p><button id="ok" class="btn" disabled>Confirmer ma participation</button><div id="res"></div>`;
   };
 
-  /* ============ VOTE (Supabase) ============ */
+  /* ============ VOTE via RPC ============ */
   async function vote(pid, cid) {
     const p = db.polls.find(x => x.id === pid);
     if (!p || status(p) !== 'actif') return { ok: false, m: 'Sondage fermé ou non commencé.' };
     const c = db.cands.find(x => x.id === cid);
     if (!c || !c.pub || !(p.cands || []).includes(cid)) return { ok: false, m: 'Candidat non autorisé.' };
 
-    const { error } = await supabase.from('resp').insert({
-      poll: pid,
-      cand: cid,
-      voter_key: myKey()
+    const { error } = await supabase.rpc('cast_vote', {
+      p_poll: pid,
+      p_cand: cid,
+      p_key: myKey()
     });
 
     if (error) {
-      if (error.code === '23505') return { ok: false, m: 'Participation déjà enregistrée.' };
+      if (error.message && error.message.includes('déjà enregistrée'))
+        return { ok: false, m: 'Participation déjà enregistrée.' };
       return { ok: false, m: 'Erreur : ' + error.message };
     }
     await loadData();
@@ -213,7 +299,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 
   /* ============================================================
-     ADMINISTRATION (Supabase Auth + CRUD)
+     ADMINISTRATION
      ============================================================ */
   const A = {};
   const ADM_LOCK_KEY = 'snw_lock';
@@ -314,7 +400,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     reader.readAsDataURL(file);
   });
 
-  /* ---------- Écran de connexion (Supabase Auth) ---------- */
+  /* ---------- Écran de connexion ---------- */
   A.login = () => {
     setTimeout(() => {
       const f = $('#lf');
@@ -347,8 +433,19 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           lm.textContent = 'Identifiants invalides.';
           return;
         }
-        admClearFail();
+
         currentSession = data.session;
+        const role = await fetchMyRole();
+        if (role !== 'admin') {
+          await supabase.auth.signOut();
+          currentSession = null;
+          currentRole = null;
+          lm.className = 'adm-login-msg';
+          lm.textContent = 'Ce compte n\'a pas les droits administrateur.';
+          return;
+        }
+
+        admClearFail();
         lm.className = 'adm-login-msg ok';
         lm.textContent = 'Connexion réussie. Redirection…';
         await loadData();
@@ -402,7 +499,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const statusPill = p => {
       const s = status(p);
-      const map = { 'brouillon': 'draft', 'actif': 'active', 'terminé': 'closed', 'fermé': 'closed', 'programmé': 'scheduled' };
+      const map = { 'brouillon': 'draft', 'actif': 'active', 'terminé': 'closed', 'fermé': 'closed', 'programmé': 'scheduled', 'suspendu': 'scheduled', 'archivé': 'draft' };
       return `<span class="adm-status-pill ${map[s] || 'draft'}">${s}</span>`;
     };
 
@@ -481,13 +578,17 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           const f = Object.fromEntries(new FormData(form));
           if (!f.first.trim() || !f.last.trim()) { admToast('Prénom et nom obligatoires.', 'err'); return; }
           const payload = {
-            first: f.first.trim(), last: f.last.trim(),
-            party: f.party.trim(), post: f.post, commune: f.commune,
-            photo: curPhoto, bio: f.bio, pub: !!f.pub
+            first_name: f.first.trim(),
+            last_name: f.last.trim(),
+            position_type: POSITION_CODES[f.post],
+            commune_id: null,
+            photo_url: curPhoto || null,
+            biography: f.bio || null,
+            publication_status: f.pub ? 'published' : 'draft'
           };
-          const { error } = await supabase.from('cands').insert(payload);
+          const { error } = await supabase.from('candidates').insert(payload);
           if (error) { admToast('Échec : ' + error.message, 'err'); return; }
-          await pushLog('Candidat créé : ' + nm(payload));
+          await pushLog('Candidat créé : ' + f.first + ' ' + f.last);
           await loadData();
           m.close();
           admToast('Candidat enregistré.', 'ok');
@@ -526,17 +627,29 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           const f = new FormData(form), g = k => f.get(k);
           if (!g('title').trim()) { admToast('Titre obligatoire.', 'err'); return; }
           if (new Date(g('end')) <= new Date(g('start'))) { admToast('La fin doit suivre le début.', 'err'); return; }
-          const payload = {
-            title: g('title').trim(), post: g('post'), commune: g('commune'),
-            start: g('start'), end: g('end'), vis: g('vis'), min: +g('min') || 0,
-            status: g('status'), cands: f.getAll('cs')
+          const selectedCands = f.getAll('cs');
+          if (!selectedCands.length) { admToast('Sélectionnez au moins un candidat.', 'err'); return; }
+
+          const pollPayload = {
+            title: g('title').trim(),
+            position_type: POSITION_CODES[g('post')],
+            commune_id: null,
+            participation_mode: 'public',
+            status: g('status') === 'draft' ? 'draft' : 'published',
+            starts_at: g('start'),
+            ends_at: g('end'),
+            results_visibility: g('vis') === 'live' ? 'live' : 'after_close',
+            minimum_publication_count: +g('min') || 0
           };
-          if (!payload.cands.length) { admToast('Sélectionnez au moins un candidat.', 'err'); return; }
-          const bad = db.cands.filter(c => payload.cands.includes(c.id) && (c.post !== payload.post || (payload.commune && c.commune !== payload.commune)));
-          if (bad.length) { admToast('Incompatibles : ' + bad.map(nm).join(', '), 'err'); return; }
-          const { error } = await supabase.from('polls').insert(payload);
-          if (error) { admToast('Échec : ' + error.message, 'err'); return; }
-          await pushLog('Sondage créé : ' + payload.title);
+          const { data: pollData, error: pollErr } = await supabase
+            .from('polls').insert(pollPayload).select().single();
+          if (pollErr) { admToast('Échec : ' + pollErr.message, 'err'); return; }
+
+          const links = selectedCands.map(cid => ({ poll_id: pollData.id, candidate_id: cid }));
+          const { error: linkErr } = await supabase.from('poll_candidates').insert(links);
+          if (linkErr) { admToast('Lien candidats : ' + linkErr.message, 'err'); return; }
+
+          await pushLog('Sondage créé : ' + pollPayload.title);
           await loadData();
           m.close();
           admToast('Sondage créé.', 'ok');
@@ -572,6 +685,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if (d.a === 'out') {
           await supabase.auth.signOut();
           currentSession = null;
+          currentRole = null;
           await pushLog('Déconnexion admin');
           location.hash = '#/';
           route();
@@ -580,7 +694,9 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if (d.a === 'pub') {
           const c = db.cands.find(x => x.id === d.id);
           if (!c) return;
-          const { error } = await supabase.from('cands').update({ pub: !c.pub }).eq('id', c.id);
+          const newStatus = c.pub ? 'draft' : 'published';
+          const { error } = await supabase.from('candidates')
+            .update({ publication_status: newStatus }).eq('id', c.id);
           if (error) { admToast('Échec : ' + error.message, 'err'); return; }
           await pushLog('Publication candidat : ' + nm(c));
           await loadData();
@@ -594,7 +710,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             admToast('Candidat lié à un sondage : dépubliez-le plutôt.', 'warn');
             return;
           }
-          const { error } = await supabase.from('cands').delete().eq('id', d.id);
+          const { error } = await supabase.from('candidates').delete().eq('id', d.id);
           if (error) { admToast('Échec : ' + error.message, 'err'); return; }
           await pushLog('Candidat supprimé');
           await loadData();
@@ -625,9 +741,10 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if (d.a === 'reset') {
           if (!confirm('⚠ ATTENTION : effacer TOUTES les données (candidats, sondages, participations) ?')) return;
           if (!confirm('Dernière confirmation : action IRRÉVERSIBLE.')) return;
-          await supabase.from('resp').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await supabase.from('poll_responses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await supabase.from('poll_candidates').delete().neq('poll_id', '00000000-0000-0000-0000-000000000000');
           await supabase.from('polls').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-          await supabase.from('cands').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await supabase.from('candidates').delete().neq('id', '00000000-0000-0000-0000-000000000000');
           await loadData();
           admToast('Base réinitialisée.', 'ok');
           route();
@@ -834,13 +951,17 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   /* ============ DÉMARRAGE ============ */
   (async () => {
-    // Restaurer la session Supabase si elle existe
-    const { data: { session } } = await supabase.auth.getSession();
-    currentSession = session;
-    await loadData();
-    if (isAdmin()) await loadLogs();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      currentSession = session;
+      if (currentSession) await fetchMyRole();
 
-    window.addEventListener('hashchange', route);
+      window.addEventListener('hashchange', route);
+      await loadData();
+      if (isAdmin()) await loadLogs();
+    } catch (e) {
+      console.error('[Démarrage]', e);
+    }
     route();
   })();
 
