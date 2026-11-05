@@ -1,12 +1,14 @@
 /* ============================================================
-   SONDAGE NORD-OUEST — mode local (localStorage)
-   Aucune dépendance, aucun build.
-   Version complète et corrigée.
+   SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
    ============================================================ */
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 (() => {
   'use strict';
 
-  /* ============ UTILITAIRES DE BASE ============ */
+  /* ============ UTILITAIRES ============ */
   const $ = s => document.querySelector(s);
   const app = $('#app');
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -21,33 +23,56 @@
     'Bombardopolis', 'Baie-de-Henne', 'Jean-Rabel'
   ];
 
-  /* ============ BASE DE DONNÉES ============ */
-  let db = JSON.parse(localStorage.getItem('snw') || 'null') || {
-    cands: [], polls: [], resp: [], admin: null, log: []
-  };
-  const save = () => localStorage.setItem('snw', JSON.stringify(db));
+  /* ============ CACHE LOCAL ============ */
+  // db reste en mémoire comme cache, mais la source de vérité est Supabase
+  let db = { cands: [], polls: [], resp: [], log: [] };
+  let currentSession = null;
 
+  /* ============ IDENTITÉ UTILISATEUR ============ */
+  // Clé anti-double-vote stockée localement
   const myKey = () => {
     let k = localStorage.getItem('snw_key');
     if (!k) { k = uid() + uid(); localStorage.setItem('snw_key', k); }
     return k;
   };
 
-  const isAdmin = () => sessionStorage.getItem('snw_admin') === '1';
+  /* ============ ÉTAT ADMIN ============ */
+  const isAdmin = () => !!currentSession;
 
-  const sha = async t => {
-    const s = 'snw' + t;
-    if (!(window.crypto && crypto.subtle)) return btoa(unescape(encodeURIComponent(s)));
-    return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))]
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-  };
+  /* ============ CHARGEMENT DES DONNÉES DEPUIS SUPABASE ============ */
+  async function loadData() {
+    try {
+      const [candsRes, pollsRes, respRes] = await Promise.all([
+        supabase.from('cands').select('*').order('created_at'),
+        supabase.from('polls').select('*').order('created_at', { ascending: false }),
+        supabase.from('resp').select('*')
+      ]);
 
-  const log = a => {
-    db.log.unshift({ a, d: new Date().toLocaleString('fr-FR') });
-    db.log = db.log.slice(0, 100);
-  };
+      if (candsRes.error) throw candsRes.error;
+      if (pollsRes.error) throw pollsRes.error;
+      if (respRes.error) throw respRes.error;
 
-  /* ============ LOGIQUE MÉTIER ============ */
+      db.cands = candsRes.data || [];
+      db.polls = pollsRes.data || [];
+      db.resp  = respRes.data || [];
+    } catch (e) {
+      console.error('[Supabase] loadData', e);
+      app.innerHTML = `<p class="msg err">Erreur de connexion à la base de données : ${esc(e.message)}</p>`;
+    }
+  }
+
+  async function loadLogs() {
+    const { data, error } = await supabase
+      .from('logs').select('*').order('at', { ascending: false }).limit(100);
+    if (!error) db.log = (data || []).map(l => ({ a: l.action, d: new Date(l.at).toLocaleString('fr-FR') }));
+  }
+
+  async function pushLog(action) {
+    await supabase.from('logs').insert({ action });
+    await loadLogs();
+  }
+
+  /* ============ LOGIQUE MÉTIER (inchangée) ============ */
   const status = p => {
     if (p.status === 'draft') return 'brouillon';
     if (p.status === 'closed') return 'fermé';
@@ -59,7 +84,7 @@
     const r = db.resp.filter(x => x.poll === p.id), t = r.length;
     return {
       t,
-      rows: db.cands.filter(c => p.cands.includes(c.id)).map(c => {
+      rows: db.cands.filter(c => (p.cands || []).includes(c.id)).map(c => {
         const n = r.filter(x => x.cand === c.id).length;
         return { c, n, pct: t ? n / t * 100 : 0 };
       })
@@ -133,7 +158,7 @@
 
   P['/resultats'] = () => `<h1>Résultats</h1>${pub().map(p => `<div class="card"><b>${esc(p.title)}</b> <span class="tag">${status(p)}</span>${bars(p)}</div>`).join('') || '<p class="msg info">Aucun sondage.</p>'}<p class="muted">Ces pourcentages décrivent les participants de la plateforme, pas la population.</p>`;
 
-  P['/methodologie'] = () => `<h1>Méthodologie</h1><div class="card"><p>Plateforme de sondages d'opinion <b>non officielle</b> : aucun lien avec le CEP.</p><p></p><p>Les participants ne sont pas un échantillon représentatif.</p></div>`;
+  P['/methodologie'] = () => `<h1>Méthodologie</h1><div class="card"><p>Plateforme de sondages d'opinion <b>non officielle</b> : aucun lien avec le CEP.</p><p>Les participants ne sont pas un échantillon représentatif.</p></div>`;
 
   P['/apropos'] = () => `<h1>À propos, confidentialité, contact</h1><div class="card"><p>SONDAGE NORD-OUEST — « L'opinion citoyenne au cœur de la démocratie ».</p><p>Aucune donnée personnelle n'est demandée.</p></div>`;
 
@@ -142,9 +167,9 @@
     if (!p) return '<p class="msg err">Sondage introuvable.</p>';
     const s = status(p);
     if (s !== 'actif') return `<p class="msg err">Ce sondage est ${s} : participation impossible.</p>`;
-    if (db.resp.some(r => r.poll === p.id && r.key === myKey()))
+    if (db.resp.some(r => r.poll === p.id && r.voter_key === myKey()))
       return '<p class="msg ok">Vous avez déjà participé à ce sondage. Merci !</p>';
-    const cs = db.cands.filter(c => p.cands.includes(c.id) && c.pub);
+    const cs = db.cands.filter(c => (p.cands || []).includes(c.id) && c.pub);
     setTimeout(() => {
       let sel = null;
       const btn = $('#ok');
@@ -155,9 +180,10 @@
         $('#rec').innerHTML = `Votre choix : <b>${esc(nm(c))}</b> — ${esc(p.post)}, ${esc(terr(p.commune))}`;
         btn.disabled = false;
       });
-      btn.onclick = () => {
+      btn.onclick = async () => {
         btn.disabled = true;
-        const r = vote(p.id, sel);
+        $('#res').innerHTML = '<p class="msg info">Enregistrement…</p>';
+        const r = await vote(p.id, sel);
         $('#res').innerHTML = `<p class="msg ${r.ok ? 'ok' : 'err'}">${esc(r.m)}</p>`;
         if (!r.ok) btn.disabled = false;
       };
@@ -165,24 +191,31 @@
     return `<h1>${esc(p.title)}</h1><p>${esc(p.post)} — ${esc(terr(p.commune))}</p><div class="grid">${cs.map(c => `<div class="pick" data-id="${c.id}">${candCard(c)}</div>`).join('') || '<p class="msg info">Aucun candidat publié dans ce sondage.</p>'}</div><p id="rec" class="msg info">Sélectionnez un candidat.</p><p class="muted">Confirmation explicite : ce choix sera enregistré définitivement.</p><button id="ok" class="btn" disabled>Confirmer ma participation</button><div id="res"></div>`;
   };
 
-  function vote(pid, cid) {
+  /* ============ VOTE (Supabase) ============ */
+  async function vote(pid, cid) {
     const p = db.polls.find(x => x.id === pid);
     if (!p || status(p) !== 'actif') return { ok: false, m: 'Sondage fermé ou non commencé.' };
     const c = db.cands.find(x => x.id === cid);
-    if (!c || !c.pub || !p.cands.includes(cid)) return { ok: false, m: 'Candidat non autorisé pour ce sondage.' };
-    if (db.resp.some(r => r.poll === pid && r.key === myKey())) return { ok: false, m: 'Participation déjà enregistrée.' };
-    db.resp.push({ id: uid(), poll: pid, cand: cid, key: myKey(), at: Date.now() });
-    save();
+    if (!c || !c.pub || !(p.cands || []).includes(cid)) return { ok: false, m: 'Candidat non autorisé.' };
+
+    const { error } = await supabase.from('resp').insert({
+      poll: pid,
+      cand: cid,
+      voter_key: myKey()
+    });
+
+    if (error) {
+      if (error.code === '23505') return { ok: false, m: 'Participation déjà enregistrée.' };
+      return { ok: false, m: 'Erreur : ' + error.message };
+    }
+    await loadData();
     return { ok: true, m: 'Merci ! Votre participation a été enregistrée.' };
   }
 
   /* ============================================================
-     ADMINISTRATION — refonte discrète & sécurisée
+     ADMINISTRATION (Supabase Auth + CRUD)
      ============================================================ */
   const A = {};
-
-  // Session admin avec expiration (30 min d'inactivité)
-  const ADM_TIMEOUT = 30 * 60 * 1000;
   const ADM_LOCK_KEY = 'snw_lock';
   const ADM_LOCK_MAX = 5;
   const ADM_LOCK_MS = 5 * 60 * 1000;
@@ -208,20 +241,7 @@
   };
 
   const admClearFail = () => localStorage.removeItem(ADM_LOCK_KEY);
-  const admTouchSession = () => sessionStorage.setItem('snw_admin_at', Date.now());
 
-  const admIsStillValid = () => {
-    if (!isAdmin()) return false;
-    const at = +sessionStorage.getItem('snw_admin_at') || 0;
-    if (Date.now() - at > ADM_TIMEOUT) {
-      sessionStorage.removeItem('snw_admin');
-      sessionStorage.removeItem('snw_admin_at');
-      return false;
-    }
-    return true;
-  };
-
-  // Toast
   const admToast = (msg, kind = 'info') => {
     let wrap = document.querySelector('.adm-toast-wrap');
     if (!wrap) {
@@ -246,7 +266,6 @@
     }, 4000);
   };
 
-  // Modal générique
   const admModal = (title, bodyHtml, footHtml = '') => {
     const back = document.createElement('div');
     back.className = 'adm-modal-backdrop';
@@ -265,14 +284,11 @@
     const close = () => back.remove();
     back.querySelector('.adm-modal-close').onclick = close;
     back.onclick = e => { if (e.target === back) close(); };
-    const escKey = e => {
-      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escKey); }
-    };
+    const escKey = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escKey); } };
     document.addEventListener('keydown', escKey);
     return { el: back, close };
   };
 
-  // Compression image → base64
   const compressImage = (file) => new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) return reject(new Error('Format non supporté.'));
     if (file.size > 2 * 1024 * 1024) return reject(new Error('Image trop lourde (max 2 Mo).'));
@@ -298,14 +314,17 @@
     reader.readAsDataURL(file);
   });
 
-  /* ---------- Écran de connexion ---------- */
+  /* ---------- Écran de connexion (Supabase Auth) ---------- */
   A.login = () => {
     setTimeout(() => {
       const f = $('#lf');
       if (!f) return;
       f.onsubmit = async e => {
         e.preventDefault();
-        const pw = $('#pw'), lm = $('#lm');
+        const email = $('#em').value.trim();
+        const pw = $('#pw').value;
+        const lm = $('#lm');
+
         const lock = admIsLocked();
         if (lock) {
           const sec = Math.ceil((lock.until - Date.now()) / 1000);
@@ -313,41 +332,28 @@
           lm.textContent = `Trop de tentatives. Réessayez dans ${sec}s.`;
           return;
         }
-        const v = pw.value;
-        if (v.length < 8) {
+        if (!email || pw.length < 6) {
           lm.className = 'adm-login-msg';
-          lm.textContent = '8 caractères minimum.';
+          lm.textContent = 'Email et mot de passe (6 caractères min.) requis.';
           return;
         }
         lm.className = 'adm-login-msg';
         lm.textContent = 'Vérification…';
-        const h = await sha(v);
-        if (!db.admin) {
-          db.admin = h;
-          log('Création du compte admin');
-          save();
-          admClearFail();
-          sessionStorage.setItem('snw_admin', '1');
-          admTouchSession();
-          lm.className = 'adm-login-msg ok';
-          lm.textContent = 'Compte créé. Redirection…';
-          setTimeout(route, 400);
-        } else if (h === db.admin) {
-          admClearFail();
-          sessionStorage.setItem('snw_admin', '1');
-          admTouchSession();
-          log('Connexion admin');
-          save();
-          lm.className = 'adm-login-msg ok';
-          lm.textContent = 'Connexion réussie.';
-          setTimeout(route, 400);
-        } else {
+
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
+        if (error) {
           admRecordFail();
           lm.className = 'adm-login-msg';
           lm.textContent = 'Identifiants invalides.';
-          pw.value = '';
-          pw.focus();
+          return;
         }
+        admClearFail();
+        currentSession = data.session;
+        lm.className = 'adm-login-msg ok';
+        lm.textContent = 'Connexion réussie. Redirection…';
+        await loadData();
+        await loadLogs();
+        setTimeout(route, 400);
       };
     });
 
@@ -363,10 +369,11 @@
           <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </div>
         <h1>Espace réservé</h1>
-        <p class="adm-sub">${db.admin ? 'Authentification requise pour continuer.' : 'Première configuration : définissez le mot de passe administrateur.'}</p>
+        <p class="adm-sub">Authentification requise pour continuer.</p>
         <form id="lf" autocomplete="off">
-          <input id="pw" type="password" autocomplete="${db.admin ? 'current-password' : 'new-password'}" placeholder="Mot de passe (8 caractères min.)" minlength="8" required>
-          <button class="btn" type="submit">${db.admin ? 'Se connecter' : 'Créer le compte'}</button>
+          <input id="em" type="email" placeholder="Email administrateur" autocomplete="username" required>
+          <input id="pw" type="password" placeholder="Mot de passe" autocomplete="current-password" required>
+          <button class="btn" type="submit">Se connecter</button>
         </form>
         ${lockMsg}
         <p id="lm" class="adm-login-msg"></p>
@@ -380,14 +387,11 @@
   let admActionBound = false;
 
   A.main = () => {
-    if (!admIsStillValid()) return A.login();
-
-    admTouchSession();
+    if (!isAdmin()) return A.login();
 
     const csv = p => 'Candidat,Preferences,Pourcentage\n' +
       tally(p).rows.map(r => `"${nm(r.c)}",${r.n},${r.pct.toFixed(1)}`).join('\n');
 
-    /* --- Rendu --- */
     const stats = {
       cands: db.cands.filter(c => c.pub).length,
       candsAll: db.cands.length,
@@ -402,9 +406,7 @@
       return `<span class="adm-status-pill ${map[s] || 'draft'}">${s}</span>`;
     };
 
-    /* --- Init DOM (appelé après insertion) --- */
     setTimeout(() => {
-      // Onglets
       document.querySelectorAll('.adm-tabs button').forEach(b => {
         b.onclick = () => {
           admTab = b.dataset.tab;
@@ -415,7 +417,7 @@
       const activeTab = document.querySelector(`.adm-tabs button[data-tab="${admTab}"]`);
       if (activeTab) activeTab.click();
 
-      // Modal nouveau candidat
+      // ---- Modal nouveau candidat ----
       const btnAddCand = $('#btnAddCand');
       if (btnAddCand) btnAddCand.onclick = () => {
         let curPhoto = '';
@@ -456,26 +458,18 @@
         const refreshPrev = () => {
           const el = m.el.querySelector('#phPrev');
           if (!el) return;
-          if (curPhoto) {
-            el.outerHTML = `<img class="adm-photo-preview" id="phPrev" src="${esc(curPhoto)}" alt="">`;
-          } else {
+          if (curPhoto) el.outerHTML = `<img class="adm-photo-preview" id="phPrev" src="${esc(curPhoto)}" alt="">`;
+          else {
             const p = (form.first.value[0] || '?') + (form.last.value[0] || '?');
             el.outerHTML = `<div class="adm-photo-preview" id="phPrev">${esc(p.toUpperCase())}</div>`;
           }
         };
-
         form.first.oninput = form.last.oninput = refreshPrev;
-
         m.el.querySelector('#phFile').onchange = async e => {
-          const f = e.target.files[0];
-          if (!f) return;
-          try {
-            curPhoto = await compressImage(f);
-            refreshPrev();
-            admToast('Photo importée et optimisée.', 'ok');
-          } catch (err) { admToast(err.message, 'err'); }
+          const f = e.target.files[0]; if (!f) return;
+          try { curPhoto = await compressImage(f); refreshPrev(); admToast('Photo importée.', 'ok'); }
+          catch (err) { admToast(err.message, 'err'); }
         };
-
         m.el.querySelector('#phUrl').onclick = () => {
           const u = prompt('URL de la photo :');
           if (u) { curPhoto = u.trim(); refreshPrev(); }
@@ -483,28 +477,25 @@
         m.el.querySelector('#phClr').onclick = () => { curPhoto = ''; refreshPrev(); };
         m.el.querySelector('#cfCancel').onclick = m.close;
 
-        m.el.querySelector('#cfSave').onclick = () => {
+        m.el.querySelector('#cfSave').onclick = async () => {
           const f = Object.fromEntries(new FormData(form));
-          if (!f.first.trim() || !f.last.trim()) {
-            admToast('Prénom et nom obligatoires.', 'err');
-            return;
-          }
-          const c = {
-            id: uid(),
+          if (!f.first.trim() || !f.last.trim()) { admToast('Prénom et nom obligatoires.', 'err'); return; }
+          const payload = {
             first: f.first.trim(), last: f.last.trim(),
             party: f.party.trim(), post: f.post, commune: f.commune,
             photo: curPhoto, bio: f.bio, pub: !!f.pub
           };
-          db.cands.push(c);
-          log('Candidat créé : ' + nm(c));
-          save();
+          const { error } = await supabase.from('cands').insert(payload);
+          if (error) { admToast('Échec : ' + error.message, 'err'); return; }
+          await pushLog('Candidat créé : ' + nm(payload));
+          await loadData();
           m.close();
           admToast('Candidat enregistré.', 'ok');
           route();
         };
       };
 
-      // Modal nouveau sondage
+      // ---- Modal nouveau sondage ----
       const btnAddPoll = $('#btnAddPoll');
       if (btnAddPoll) btnAddPoll.onclick = () => {
         const m = admModal('Nouveau sondage', `
@@ -517,7 +508,7 @@
               <div class="adm-form-field"><label>Début *</label><input type="datetime-local" name="start" required></div>
               <div class="adm-form-field"><label>Fin *</label><input type="datetime-local" name="end" required></div>
               <div class="adm-form-field"><label>Visibilité</label><select name="vis"><option value="after">Après clôture</option><option value="live">Temps réel</option></select></div>
-              <div class="adm-form-field"><label>Seuil minimal</label><input type="number" name="min" min="0" value="0"><span class="adm-hint">Participations avant publication</span></div>
+              <div class="adm-form-field"><label>Seuil minimal</label><input type="number" name="min" min="0" value="0"></div>
             </div>
             <div class="adm-form-field full" style="margin-top:.75rem">
               <label>Candidats admissibles</label>
@@ -530,29 +521,30 @@
            <button class="btn" id="pfSave">Créer</button>`);
 
         m.el.querySelector('#pfCancel').onclick = m.close;
-        m.el.querySelector('#pfSave').onclick = () => {
+        m.el.querySelector('#pfSave').onclick = async () => {
           const form = m.el.querySelector('#pf');
           const f = new FormData(form), g = k => f.get(k);
           if (!g('title').trim()) { admToast('Titre obligatoire.', 'err'); return; }
           if (new Date(g('end')) <= new Date(g('start'))) { admToast('La fin doit suivre le début.', 'err'); return; }
-          const p = {
-            id: uid(), title: g('title').trim(), post: g('post'), commune: g('commune'),
+          const payload = {
+            title: g('title').trim(), post: g('post'), commune: g('commune'),
             start: g('start'), end: g('end'), vis: g('vis'), min: +g('min') || 0,
             status: g('status'), cands: f.getAll('cs')
           };
-          const bad = db.cands.filter(c => p.cands.includes(c.id) && (c.post !== p.post || (p.commune && c.commune !== p.commune)));
+          if (!payload.cands.length) { admToast('Sélectionnez au moins un candidat.', 'err'); return; }
+          const bad = db.cands.filter(c => payload.cands.includes(c.id) && (c.post !== payload.post || (payload.commune && c.commune !== payload.commune)));
           if (bad.length) { admToast('Incompatibles : ' + bad.map(nm).join(', '), 'err'); return; }
-          if (!p.cands.length) { admToast('Sélectionnez au moins un candidat.', 'err'); return; }
-          db.polls.push(p);
-          log('Sondage créé : ' + p.title);
-          save();
+          const { error } = await supabase.from('polls').insert(payload);
+          if (error) { admToast('Échec : ' + error.message, 'err'); return; }
+          await pushLog('Sondage créé : ' + payload.title);
+          await loadData();
           m.close();
           admToast('Sondage créé.', 'ok');
           route();
         };
       };
 
-      // Recherche
+      // ---- Recherches ----
       const cq = $('#cq'), pq = $('#pq');
       if (cq) cq.oninput = () => {
         const v = cq.value.toLowerCase();
@@ -568,21 +560,19 @@
       };
     });
 
-    /* --- Gestionnaire d'actions unique (lié une seule fois sur app) --- */
+    /* --- Actions admin --- */
     if (!admActionBound) {
-      app.addEventListener('click', e => {
+      app.addEventListener('click', async e => {
         if (location.hash !== '#/admin') return;
         if (!isAdmin()) return;
-
         const btn = e.target.closest('[data-a]');
         if (!btn) return;
         const d = btn.dataset;
 
         if (d.a === 'out') {
-          sessionStorage.removeItem('snw_admin');
-          sessionStorage.removeItem('snw_admin_at');
-          log('Déconnexion admin');
-          save();
+          await supabase.auth.signOut();
+          currentSession = null;
+          await pushLog('Déconnexion admin');
           location.hash = '#/';
           route();
           return;
@@ -590,32 +580,33 @@
         if (d.a === 'pub') {
           const c = db.cands.find(x => x.id === d.id);
           if (!c) return;
-          c.pub = !c.pub;
-          log('Publication candidat : ' + nm(c) + ' → ' + (c.pub ? 'publié' : 'dépublié'));
-          save();
-          admToast(c.pub ? 'Candidat publié.' : 'Candidat dépublié.', 'ok');
+          const { error } = await supabase.from('cands').update({ pub: !c.pub }).eq('id', c.id);
+          if (error) { admToast('Échec : ' + error.message, 'err'); return; }
+          await pushLog('Publication candidat : ' + nm(c));
+          await loadData();
+          admToast(c.pub ? 'Candidat dépublié.' : 'Candidat publié.', 'ok');
           route();
           return;
         }
         if (d.a === 'del') {
           if (!confirm('Supprimer définitivement ce candidat ?')) return;
-          if (db.polls.some(p => p.cands.includes(d.id))) {
+          if (db.polls.some(p => (p.cands || []).includes(d.id))) {
             admToast('Candidat lié à un sondage : dépubliez-le plutôt.', 'warn');
             return;
           }
-          db.cands = db.cands.filter(x => x.id !== d.id);
-          log('Candidat supprimé');
-          save();
+          const { error } = await supabase.from('cands').delete().eq('id', d.id);
+          if (error) { admToast('Échec : ' + error.message, 'err'); return; }
+          await pushLog('Candidat supprimé');
+          await loadData();
           admToast('Candidat supprimé.', 'ok');
           route();
           return;
         }
         if (d.a === 'st') {
-          const p = db.polls.find(x => x.id === d.id);
-          if (!p) return;
-          p.status = d.v;
-          log('Sondage ' + d.v + ' : ' + p.title);
-          save();
+          const { error } = await supabase.from('polls').update({ status: d.v }).eq('id', d.id);
+          if (error) { admToast('Échec : ' + error.message, 'err'); return; }
+          await pushLog('Sondage ' + d.v);
+          await loadData();
           admToast('Statut mis à jour.', 'ok');
           route();
           return;
@@ -632,14 +623,14 @@
         }
         if (d.a === 'print') { print(); return; }
         if (d.a === 'reset') {
-          if (!confirm('⚠ ATTENTION : cela efface TOUTES les données (candidats, sondages, participations, admin). Continuer ?')) return;
-          if (!confirm('Dernière confirmation : cette action est IRRÉVERSIBLE.')) return;
-          localStorage.removeItem('snw');
-          localStorage.removeItem('snw_key');
-          localStorage.removeItem(ADM_LOCK_KEY);
-          sessionStorage.clear();
-          location.hash = '#/';
-          location.reload();
+          if (!confirm('⚠ ATTENTION : effacer TOUTES les données (candidats, sondages, participations) ?')) return;
+          if (!confirm('Dernière confirmation : action IRRÉVERSIBLE.')) return;
+          await supabase.from('resp').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await supabase.from('polls').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await supabase.from('cands').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await loadData();
+          admToast('Base réinitialisée.', 'ok');
+          route();
           return;
         }
       });
@@ -803,9 +794,7 @@
   };
 
   /* ============ ROUTEUR ============ */
-  function route() {
-    if (isAdmin()) sessionStorage.setItem('snw_admin_at', Date.now());
-
+  async function route() {
     const h = (location.hash || '#/').slice(1);
     const parts = h.split('/');
     const r = parts[1] || '';
@@ -824,11 +813,10 @@
     scrollTo(0, 0);
   }
 
-  /* ============ INITIALISATION GLOBALE ============ */
+  /* ============ INITIALISATION ============ */
   const burger = $('#burger');
   if (burger) burger.onclick = () => $('#nav').classList.toggle('open');
 
-  /* ============ ACCÈS ADMIN DISCRET ============ */
   document.addEventListener('keydown', e => {
     if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') {
       e.preventDefault();
@@ -845,7 +833,15 @@
   }
 
   /* ============ DÉMARRAGE ============ */
-  window.addEventListener('hashchange', route);
-  window.addEventListener('DOMContentLoaded', route);
-  if (document.readyState !== 'loading') route();
+  (async () => {
+    // Restaurer la session Supabase si elle existe
+    const { data: { session } } = await supabase.auth.getSession();
+    currentSession = session;
+    await loadData();
+    if (isAdmin()) await loadLogs();
+
+    window.addEventListener('hashchange', route);
+    route();
+  })();
+
 })();
