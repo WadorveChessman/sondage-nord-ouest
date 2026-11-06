@@ -39,6 +39,7 @@ create table if not exists candidates (
   last_name text not null,
   photo_url text,
   party_id uuid references political_parties,
+  party_name text,
   position_type text not null check(position_type in('depute','magistrat_communal','casec','senateur')),
   commune_id uuid references communes,
   biography text,
@@ -58,6 +59,7 @@ create table if not exists polls (
   ends_at timestamptz not null,
   results_visibility text not null default 'after_close' check(results_visibility in('hidden','live','after_close')),
   minimum_publication_count int default 0,
+  created_at timestamptz default now(),
   check(ends_at>starts_at)
 );
 
@@ -118,7 +120,7 @@ alter table poll_candidates enable row level security;
 alter table poll_responses enable row level security;
 alter table audit_logs enable row level security;
 
--- ---------- POLICIES (drop if exists pour idempotence) ----------
+-- ---------- POLICIES ----------
 drop policy if exists pub_arr on arrondissements;
 drop policy if exists pub_com on communes;
 drop policy if exists pub_par on political_parties;
