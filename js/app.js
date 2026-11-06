@@ -1,6 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
-   Version corrigée : tables, colonnes, rôles, RPC.
+   Version complète avec party_name
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -24,7 +24,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     'Bombardopolis', 'Baie-de-Henne', 'Jean-Rabel'
   ];
 
-  // Correspondance entre libellés FR (utilisés dans l'UI) et codes SQL
   const POSITION_LABELS = {
     depute: 'Député',
     magistrat_communal: 'Magistrat communal',
@@ -41,7 +40,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   /* ============ ÉTAT GLOBAL ============ */
   let db = { cands: [], polls: [], resp: [], log: [] };
   let currentSession = null;
-  let currentRole = null; // 'admin' | 'user' | null
+  let currentRole = null;
 
   const isAdmin = () => currentRole === 'admin';
 
@@ -52,7 +51,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     return k;
   };
 
-  /* ============ RÉCUPÉRATION DU RÔLE ============ */
+  /* ============ RÔLE ============ */
   async function fetchMyRole() {
     if (!currentSession) { currentRole = null; return null; }
     const { data, error } = await supabase
@@ -83,7 +82,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       if (respRes.error) throw respRes.error;
       if (pcsRes.error) throw pcsRes.error;
 
-      // Association poll_id -> [candidate_id, ...]
       const byPoll = {};
       (pcsRes.data || []).forEach(pc => {
         (byPoll[pc.poll_id] = byPoll[pc.poll_id] || []).push(pc.candidate_id);
@@ -93,7 +91,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         id: c.id,
         first: c.first_name,
         last: c.last_name,
-        party: '',
+        party: c.party_name || '',
         post: POSITION_LABELS[c.position_type] || c.position_type,
         post_code: c.position_type,
         commune: c.commune_id || '',
@@ -580,6 +578,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           const payload = {
             first_name: f.first.trim(),
             last_name: f.last.trim(),
+            party_name: f.party.trim() || null,
             position_type: POSITION_CODES[f.post],
             commune_id: null,
             photo_url: curPhoto || null,
