@@ -716,3 +716,339 @@ footer a:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   PAGE PUBLIQUE CANDIDATS — version améliorée
+   ============================================================ */
+.cands-header {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--bd);
+}
+
+.cands-header h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+}
+
+.cands-header p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--tx-soft);
+}
+
+.cands-header .cands-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.7rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-left: 0.5rem;
+}
+
+.cands-search {
+  position: relative;
+  margin-bottom: 1.5rem;
+  max-width: 480px;
+}
+
+.cands-search svg {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  stroke: var(--tx-mute);
+  stroke-width: 2;
+  fill: none;
+  pointer-events: none;
+}
+
+.cands-search input {
+  width: 100%;
+  padding: 0.85rem 1rem 0.85rem 2.75rem;
+  font-size: 0.95rem;
+  border: 1.5px solid var(--bd);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  color: var(--tx);
+  margin: 0;
+  transition: var(--transition);
+}
+
+.cands-search input:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 4px rgba(30, 127, 212, 0.12);
+}
+
+.cands-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.cand-modern {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+
+.cand-modern:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+  border-color: var(--bd-strong);
+}
+
+.cand-modern-top {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 0.75rem;
+}
+
+.cand-modern-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(135deg, var(--blue-600), var(--blue-400));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(23, 105, 170, 0.25);
+}
+
+.cand-modern-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.cand-modern-info b {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--tx);
+  letter-spacing: -0.01em;
+  margin-bottom: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cand-modern-info small {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--tx-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cand-modern-body {
+  padding: 0 1.25rem 1.25rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.cand-modern-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.cand-modern-meta .tag {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cand-modern-meta .tag.blue {
+  background: rgba(30, 127, 212, 0.12);
+  color: var(--blue-600);
+}
+
+.cand-modern-bio {
+  font-size: 0.85rem;
+  color: var(--tx-soft);
+  line-height: 1.5;
+  margin-bottom: 1rem;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cand-modern-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--blue-600), var(--blue-500));
+  color: #fff !important;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: var(--transition);
+  box-shadow: 0 2px 8px rgba(23, 105, 170, 0.2);
+}
+
+.cand-modern-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(23, 105, 170, 0.3);
+  color: #fff !important;
+}
+
+.cand-modern-action svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.4;
+}
+
+.cands-hint {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--tx-mute);
+  text-align: center;
+  font-style: italic;
+}
+
+/* ============================================================
+   DASHBOARD ADMIN — cartes de sondages
+   ============================================================ */
+.poll-card-admin {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-xs);
+  transition: var(--transition);
+}
+
+.poll-card-admin:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--bd-strong);
+}
+
+.poll-card-admin-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.poll-card-admin-title {
+  flex: 1;
+  min-width: 200px;
+}
+
+.poll-card-admin-title b {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 0.25rem;
+}
+
+.poll-card-admin-title small {
+  font-size: 0.82rem;
+  color: var(--tx-mute);
+}
+
+.poll-card-admin-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.poll-admin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--tx-soft);
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.poll-admin-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+  fill: none;
+  stroke: currentColor;
+}
+
+.poll-admin-btn:hover {
+  background: var(--card);
+  border-color: var(--blue-500);
+  color: var(--blue-600);
+  transform: translateY(-1px);
+}
+
+.poll-admin-btn.danger:hover {
+  border-color: var(--err);
+  color: var(--err);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.poll-admin-btn.primary {
+  background: linear-gradient(135deg, var(--blue-600), var(--blue-500));
+  color: #fff;
+  border: none;
+}
+
+.poll-admin-btn.primary:hover {
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(23, 105, 170, 0.3);
+}
+
+.poll-admin-stats {
+  display: flex;
+  gap: 1.5rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--bd);
+  font-size: 0.8rem;
+  color: var(--tx-mute);
+  flex-wrap: wrap;
+}
+
+.poll-admin-stats b {
+  color: var(--tx);
+  font-weight: 700;
+}
