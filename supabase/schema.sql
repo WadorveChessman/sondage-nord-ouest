@@ -1,9 +1,11 @@
 -- ============================================================
 -- SONDAGE NORD-OUEST — Schéma Supabase (idempotent)
--- Peut être exécuté plusieurs fois sans erreur. 
+-- Peut être exécuté plusieurs fois sans erreur.
 -- ============================================================
 
-create extension if not exists pgcrypto;
+-- pgcrypto est préinstallé par Supabase dans le schéma "extensions".
+-- On le référence explicitement via extensions.digest() dans cast_vote().
+create extension if not exists pgcrypto with schema extensions;
 
 -- ---------- TABLES ----------
 create table if not exists profiles (
@@ -156,7 +158,7 @@ create policy adm_log on audit_logs for select using(is_admin());
 
 -- ---------- FONCTIONS RPC ----------
 create or replace function cast_vote(p_poll uuid, p_cand uuid, p_key text default null)
-returns text language plpgsql security definer set search_path=public as $$
+returns text language plpgsql security definer set search_path=extensions,public as $$
 declare v polls;
 begin
   select * into v from polls
@@ -186,7 +188,7 @@ begin
       raise exception 'Clé invalide';
     end if;
     insert into poll_responses(poll_id,candidate_id,anonymous_key_hash)
-      values(p_poll,p_cand,encode(digest(p_key,'sha256'),'hex'));
+      values(p_poll,p_cand,encode(extensions.digest(p_key,'sha256'),'hex'));
   end if;
 
   return 'ok';
