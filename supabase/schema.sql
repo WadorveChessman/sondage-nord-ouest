@@ -1,6 +1,6 @@
 -- ============================================================
 -- SONDAGE NORD-OUEST — Schéma Supabase (idempotent)
--- Peut être exécuté plusieurs fois sans erreur.
+-- Peut être exécuté plusieurs fois sans erreur. 
 -- ============================================================
 
 create extension if not exists pgcrypto;
