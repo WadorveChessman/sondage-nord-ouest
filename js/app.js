@@ -209,7 +209,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   P['/'] = () => {
     const act = db.polls.filter(p => status(p) === 'actif');
-    return `<section class="hero"><small>L'opinion citoyenne au cœur de la démocratie</small><h1>Qui souhaitez-vous voir représenter votre commune ?</h1><p>Exprimez votre préférence dans les sondages d'opinion du Nord-Ouest d'Haïti.</p><a class="btn" style="background:var(--warn)" href="#/sondages">Participer maintenant</a> <a class="btn alt" href="#/resultats">Consulter les résultats</a></section>
+    return `<section class="hero"><small>L'opinion citoyenne au cœur de la démocratie</small><h1>Qui souhaitez-vous voir représenter votre commune ?</h1><p>Participez aux sondages du Nord-Ouest. Un clic, une voix.</p><a class="btn" style="background:var(--warn)" href="#/sondages">Participer maintenant</a> <a class="btn alt" href="#/resultats">Consulter les résultats</a></section>
     <h2>En chiffres</h2><div class="grid">${[
       ['Candidats', db.cands.filter(c => c.pub).length],
       ['Sondages actifs', act.length],
