@@ -1,6 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
-   Version complète avec party_name
+   Version complète : party_name + dashboard enrichi + suppr.
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -174,9 +174,11 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     };
   };
 
-  const canShow = p => p.status !== 'draft'
-    && tally(p).t >= (+p.min || 0)
-    && (p.vis === 'live' || ['terminé', 'fermé'].includes(status(p)));
+  const canShow = p => {
+    if (p.status === 'draft') return false;
+    return tally(p).t >= (+p.min || 0)
+      && (p.vis === 'live' || ['terminé', 'fermé'].includes(status(p)));
+  };
 
   const nm = c => c.first + ' ' + c.last;
   const terr = id => id || 'Nord-Ouest (département)';
@@ -188,18 +190,55 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const candCard = c => `<div class="card"><div style="display:flex;gap:.8rem">${photo(c)}<div><b>${esc(nm(c))}</b><br><span class="tag">${esc(c.party || 'Indépendant')}</span></div></div><p>${esc(c.post)} — ${esc(terr(c.commune))}</p><p class="muted">${esc((c.bio || '').slice(0, 120))}</p></div>`;
 
-  const pollCard = p => `<div class="card"><b>${esc(p.title)}</b><p>${esc(p.post)} — ${esc(terr(p.commune))}<br><span class="tag">${status(p)}</span></p><p class="muted">${fmt(p.start)} → ${fmt(p.end)}</p>${status(p) === 'actif' ? `<a class="btn" href="#/participer/${p.id}">Participer</a>` : ''}</div>`;
+  const candCardModern = c => {
+    const initials = ((c.first[0] || '') + (c.last[0] || '')).toUpperCase();
+    const photoHtml = c.photo
+      ? `<img class="cand-modern-avatar" src="${esc(c.photo)}" alt="">`
+      : `<div class="cand-modern-avatar">${esc(initials)}</div>`;
+    const postTag = c.post ? `<span class="tag blue">${esc(c.post)}</span>` : '';
+    const communeTag = c.commune ? `<span class="tag">${esc(terr(c.commune))}</span>` : '<span class="tag">Département</span>';
+    return `
+      <article class="cand-modern">
+        <div class="cand-modern-top">
+          ${photoHtml}
+          <div class="cand-modern-info">
+            <b>${esc(nm(c))}</b>
+            <small>${esc(c.party || 'Indépendant')}</small>
+          </div>
+        </div>
+        <div class="cand-modern-body">
+          <div class="cand-modern-meta">
+            ${postTag}
+            ${communeTag}
+          </div>
+          <p class="cand-modern-bio">${esc(c.bio || 'Aucune biographie fournie.')}</p>
+          <a class="cand-modern-action" href="#/sondages">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Choisir ce candidat
+          </a>
+        </div>
+      </article>`;
+  };
+
+  const pollCard = p => {
+    const t = tally(p);
+    return `<div class="card"><b>${esc(p.title)}</b><p>${esc(p.post)} — ${esc(terr(p.commune))}<br><span class="tag">${status(p)}</span></p><p class="muted">${fmt(p.start)} → ${fmt(p.end)}</p><p class="muted"><b>${t.t}</b> participation${t.t > 1 ? 's' : ''} enregistrée${t.t > 1 ? 's' : ''}</p>${status(p) === 'actif' ? `<a class="btn" href="#/participer/${p.id}">Participer</a>` : ''}</div>`;
+  };
 
   const pub = () => db.polls.filter(p => p.status !== 'draft');
 
   const bars = p => {
     const t = tally(p);
-    if (!canShow(p)) return `<p class="msg info">Résultats non publiables pour le moment (règles de publication ou seuil minimal de ${+p.min || 0} participations).</p>`;
-    if (!t.t) return '<p class="msg info">Aucune participation enregistrée.</p>';
-    return `<p>${t.t} participation(s) valide(s)</p>` +
-      t.rows.sort((a, b) => b.n - a.n).map(r =>
-        `<p>${esc(nm(r.c))} — <b>${r.pct.toFixed(1)} %</b> (${r.n})<div class="bar"><i style="width:${r.pct}%"></i></div></p>`
-      ).join('');
+    if (!t.t) return '<p class="msg info">Aucune participation enregistrée pour le moment.</p>';
+    let html = `<p><b>${t.t}</b> participation(s) enregistrée(s)</p>`;
+    if (!canShow(p)) {
+      html += `<p class="msg info">Les résultats détaillés seront publiés après la clôture du sondage.</p>`;
+      return html;
+    }
+    html += t.rows.sort((a, b) => b.n - a.n).map(r =>
+      `<p>${esc(nm(r.c))} — <b>${r.pct.toFixed(1)} %</b> (${r.n} vote${r.n > 1 ? 's' : ''})<div class="bar"><i style="width:${r.pct}%"></i></div></p>`
+    ).join('');
+    return html;
   };
 
   const opts = (a, sel) => a.map(x => `<option ${x === sel ? 'selected' : ''}>${esc(x)}</option>`).join('');
@@ -225,18 +264,28 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   P['/candidats'] = () => {
     setTimeout(() => {
       const f = () => {
-        const q = $('#q').value.toLowerCase(), po = $('#fp').value, co = $('#fc').value;
-        $('#cl').innerHTML = db.cands.filter(c =>
-          c.pub && nm(c).toLowerCase().includes(q) &&
-          (!po || c.post === po) && (!co || c.commune === co)
-        ).map(candCard).join('') || '<p class="msg info">Aucun candidat ne correspond à ces filtres.</p>';
+        const q = $('#q').value.toLowerCase();
+        const items = db.cands.filter(c => c.pub && nm(c).toLowerCase().includes(q));
+        $('#cl').innerHTML = items.map(candCardModern).join('')
+          || '<p class="msg info">Aucun candidat ne correspond à votre recherche.</p>';
+        const count = $('#candsCount');
+        if (count) count.textContent = items.length;
       };
       let t;
-      $('#q').oninput = () => { clearTimeout(t); t = setTimeout(f, 250); };
-      $('#fp').onchange = $('#fc').onchange = f;
+      $('#q').oninput = () => { clearTimeout(t); t = setTimeout(f, 200); };
       f();
     });
-    return `<h1>Les candidats</h1><div class="filters"><input id="q" placeholder="Rechercher un nom"><select id="fp"><option value="">Tous les postes</option>${opts(POSTS)}</select><select id="fc"><option value="">Toutes les communes</option>${opts(COMMUNES)}</select></div><div id="cl" class="grid"></div>`;
+    return `
+      <div class="cands-header">
+        <h1>Sondage – Candidats au Sénat <span class="cands-count" id="candsCount">${db.cands.filter(c => c.pub).length}</span></h1>
+        <p>Département du Nord-Ouest · Cliquez sur « Choisir » pour participer au sondage de votre commune.</p>
+      </div>
+      <div class="cands-search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="q" placeholder="Rechercher un candidat par son nom…">
+      </div>
+      <div id="cl" class="cands-grid"></div>
+      <p class="cands-hint">Faites défiler la liste pour découvrir tous les candidats. Une seule préférence par participation.</p>`;
   };
 
   P['/resultats'] = () => `<h1>Résultats</h1>${pub().map(p => `<div class="card"><b>${esc(p.title)}</b> <span class="tag">${status(p)}</span>${bars(p)}</div>`).join('') || '<p class="msg info">Aucun sondage.</p>'}<p class="muted">Ces pourcentages décrivent les participants de la plateforme, pas la population.</p>`;
@@ -600,7 +649,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       if (btnAddPoll) btnAddPoll.onclick = () => {
         const m = admModal('Nouveau sondage', `
           <form id="pf" class="adm-form">
-            <div class="adm-form-field full"><label>Titre *</label><input name="title" required placeholder="Ex. : Élections législatives 2026"></div>
+            <div class="adm-form-field full"><label>Titre *</label><input name="title" required placeholder="Ex. : Sénateur — Port-de-Paix 2026"></div>
             <div class="adm-form-grid cols-3">
               <div class="adm-form-field"><label>Poste</label><select name="post">${opts(POSTS)}</select></div>
               <div class="adm-form-field"><label>Commune</label><select name="commune"><option value="">Département entier</option>${opts(COMMUNES)}</select></div>
@@ -666,8 +715,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       };
       if (pq) pq.oninput = () => {
         const v = pq.value.toLowerCase();
-        document.querySelectorAll('#pollsTable tbody tr[data-name]').forEach(tr => {
-          tr.style.display = tr.dataset.name.includes(v) ? '' : 'none';
+        document.querySelectorAll('#pollsList .poll-card-admin[data-name]').forEach(el => {
+          el.style.display = el.dataset.name.includes(v) ? '' : 'none';
         });
       };
     });
@@ -681,6 +730,46 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if (!btn) return;
         const d = btn.dataset;
 
+        if (d.a === 'copylink') {
+          const link = `${location.origin}${location.pathname}#/participer/${d.id}`;
+          try {
+            await navigator.clipboard.writeText(link);
+            admToast('Lien copié dans le presse-papiers.', 'ok');
+          } catch {
+            prompt('Copiez ce lien :', link);
+          }
+          return;
+        }
+        if (d.a === 'wa') {
+          const p = db.polls.find(x => x.id === d.id);
+          if (!p) return;
+          const link = `${location.origin}${location.pathname}#/participer/${d.id}`;
+          const text = `Participez au sondage « ${p.title} » – Nord-Ouest Haïti : ${link}`;
+          const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+          window.open(url, '_blank');
+          return;
+        }
+        if (d.a === 'results') {
+          location.hash = '#/resultats';
+          return;
+        }
+        if (d.a === 'delpoll') {
+          const p = db.polls.find(x => x.id === d.id);
+          if (!p) return;
+          const t = tally(p).t;
+          if (!confirm(`⚠ Supprimer le sondage « ${p.title} » ?\n\nCette action effacera aussi les ${t} participation(s) associées.\nAction IRRÉVERSIBLE.`)) return;
+          const { error: rErr } = await supabase.from('poll_responses').delete().eq('poll_id', p.id);
+          if (rErr) { admToast('Échec suppression réponses : ' + rErr.message, 'err'); return; }
+          const { error: pcErr } = await supabase.from('poll_candidates').delete().eq('poll_id', p.id);
+          if (pcErr) { admToast('Échec suppression liens : ' + pcErr.message, 'err'); return; }
+          const { error: pErr } = await supabase.from('polls').delete().eq('id', p.id);
+          if (pErr) { admToast('Échec suppression sondage : ' + pErr.message, 'err'); return; }
+          await pushLog('Sondage supprimé : ' + p.title);
+          await loadData();
+          admToast('Sondage supprimé.', 'ok');
+          route();
+          return;
+        }
         if (d.a === 'out') {
           await supabase.auth.signOut();
           currentSession = null;
@@ -720,7 +809,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if (d.a === 'st') {
           const { error } = await supabase.from('polls').update({ status: d.v }).eq('id', d.id);
           if (error) { admToast('Échec : ' + error.message, 'err'); return; }
-          await pushLog('Sondage ' + d.v);
+          await pushLog('Sondage → ' + d.v);
           await loadData();
           admToast('Statut mis à jour.', 'ok');
           route();
@@ -860,7 +949,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     <section class="adm-panel" data-panel="polls">
       <div class="adm-section-head">
-        <h2>Sondages (${db.polls.length})</h2>
+        <h2>Gestion des sondages (${db.polls.length})</h2>
         <div class="adm-toolbar">
           <div class="adm-search">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -873,25 +962,40 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         </div>
       </div>
 
-      <div class="adm-table-wrap">
-        <table class="adm-table" id="pollsTable">
-          <thead><tr><th>Titre</th><th>Statut</th><th>Participations</th><th style="text-align:right">Actions</th></tr></thead>
-          <tbody>
-            ${db.polls.map(p => `
-              <tr data-name="${esc(p.title.toLowerCase())}">
-                <td><b>${esc(p.title)}</b><br><small style="color:var(--tx-mute)">${esc(p.post)} — ${esc(terr(p.commune))}</small></td>
-                <td>${statusPill(p)}</td>
-                <td><b>${tally(p).t}</b></td>
-                <td style="text-align:right">
-                  <div class="adm-actions">
-                    ${p.status === 'draft' ? `<button class="adm-btn-icon" data-a="st" data-v="published" data-id="${p.id}" title="Publier"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></button>` : ''}
-                    ${p.status === 'published' ? `<button class="adm-btn-icon" data-a="st" data-v="closed" data-id="${p.id}" title="Fermer"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>` : ''}
-                    <button class="adm-btn-icon" data-a="csv" data-id="${p.id}" title="Exporter CSV"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
-                  </div>
-                </td>
-              </tr>`).join('') || `<tr><td colspan="4" class="adm-empty">Aucun sondage. Cliquez sur « Nouveau sondage ».</td></tr>`}
-          </tbody>
-        </table>
+      <div id="pollsList">
+        ${db.polls.map(p => {
+          const t = tally(p);
+          const s = status(p);
+          const map = { 'brouillon': 'draft', 'actif': 'active', 'terminé': 'closed', 'fermé': 'closed', 'programmé': 'scheduled', 'suspendu': 'scheduled' };
+          const pill = `<span class="adm-status-pill ${map[s] || 'draft'}">${s}</span>`;
+          const daysLeft = Math.max(0, Math.ceil((new Date(p.end) - Date.now()) / (1000 * 60 * 60 * 24)));
+          return `
+            <div class="poll-card-admin" data-name="${esc(p.title.toLowerCase())}">
+              <div class="poll-card-admin-head">
+                <div class="poll-card-admin-title">
+                  <b>${esc(p.title)}</b>
+                  <small>${esc(p.post)} · ${esc(terr(p.commune))} · ${(p.cands || []).length} candidat${(p.cands || []).length > 1 ? 's' : ''} · ${daysLeft} jour${daysLeft > 1 ? 's' : ''} restant${daysLeft > 1 ? 's' : ''}</small>
+                </div>
+                <div>${pill}</div>
+              </div>
+              <div class="poll-card-admin-actions">
+                ${p.status === 'draft' ? `<button class="poll-admin-btn primary" data-a="st" data-v="published" data-id="${p.id}"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Publier</button>` : ''}
+                ${p.status === 'published' ? `<button class="poll-admin-btn" data-a="st" data-v="suspended" data-id="${p.id}"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Suspendre</button>` : ''}
+                ${p.status === 'suspended' ? `<button class="poll-admin-btn primary" data-a="st" data-v="published" data-id="${p.id}"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Reprendre</button>` : ''}
+                ${p.status === 'published' ? `<button class="poll-admin-btn" data-a="st" data-v="closed" data-id="${p.id}"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Clôturer</button>` : ''}
+                <button class="poll-admin-btn" data-a="copylink" data-id="${p.id}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copier lien</button>
+                <button class="poll-admin-btn" data-a="wa" data-id="${p.id}"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</button>
+                <button class="poll-admin-btn" data-a="results" data-id="${p.id}"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Résultats</button>
+                <button class="poll-admin-btn" data-a="csv" data-id="${p.id}"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporter CSV</button>
+                <button class="poll-admin-btn danger" data-a="delpoll" data-id="${p.id}"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg> Supprimer</button>
+              </div>
+              <div class="poll-admin-stats">
+                <span><b>${t.t}</b> participation${t.t > 1 ? 's' : ''}</span>
+                <span><b>${(p.cands || []).length}</b> candidat${(p.cands || []).length > 1 ? 's' : ''}</span>
+                <span>Créé le ${fmt(p.start)}</span>
+              </div>
+            </div>`;
+        }).join('') || '<div class="adm-empty">Aucun sondage. Cliquez sur « Nouveau sondage ».</div>'}
       </div>
     </section>
 
