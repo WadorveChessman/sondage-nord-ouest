@@ -1,6 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
-   Version complète : party_name + dashboard enrichi + suppr.
+   Version fusionnée : cartes modernes + filtres universels.
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -197,6 +197,24 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       : `<div class="cand-modern-avatar">${esc(initials)}</div>`;
     const postTag = c.post ? `<span class="tag blue">${esc(c.post)}</span>` : '';
     const communeTag = c.commune ? `<span class="tag">${esc(terr(c.commune))}</span>` : '<span class="tag">Département</span>';
+
+    // Chercher un sondage actif contenant ce candidat
+    const activePoll = db.polls.find(p =>
+      p.status === 'published'
+      && (p.cands || []).includes(c.id)
+      && status(p) === 'actif'
+    );
+
+    const action = activePoll
+      ? `<a class="cand-modern-action" href="#/participer/${activePoll.id}">
+           <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+           Choisir ce candidat
+         </a>`
+      : `<button class="cand-modern-action" disabled style="opacity:.5;cursor:not-allowed">
+           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+           Aucun sondage actif
+         </button>`;
+
     return `
       <article class="cand-modern">
         <div class="cand-modern-top">
@@ -212,10 +230,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             ${communeTag}
           </div>
           <p class="cand-modern-bio">${esc(c.bio || 'Aucune biographie fournie.')}</p>
-          <a class="cand-modern-action" href="#/sondages">
-            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-            Choisir ce candidat
-          </a>
+          ${action}
         </div>
       </article>`;
   };
@@ -263,27 +278,64 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   P['/candidats'] = () => {
     setTimeout(() => {
-      const f = () => {
-        const q = $('#q').value.toLowerCase();
-        const items = db.cands.filter(c => c.pub && nm(c).toLowerCase().includes(q));
+      const render = () => {
+        const q = ($('#q')?.value || '').toLowerCase().trim();
+        const post = $('#fp')?.value || '';
+        const commune = $('#fc')?.value || '';
+
+        const items = db.cands.filter(c =>
+          c.pub
+          && (!q || nm(c).toLowerCase().includes(q))
+          && (!post || c.post === post)
+          && (!commune || c.commune === commune)
+        );
+
         $('#cl').innerHTML = items.map(candCardModern).join('')
-          || '<p class="msg info">Aucun candidat ne correspond à votre recherche.</p>';
+          || '<p class="msg info">Aucun candidat ne correspond à ces filtres.</p>';
+
         const count = $('#candsCount');
         if (count) count.textContent = items.length;
+
+        // Mise à jour du sous-titre (poste/commune)
+        const subtitle = $('#candsSubtitle');
+        if (subtitle) {
+          const parts = [];
+          if (post) parts.push(post + 's');
+          else parts.push('Tous les postes');
+          if (commune) parts.push('— ' + commune);
+          else parts.push('— Département du Nord-Ouest');
+          subtitle.textContent = parts.join(' ');
+        }
       };
+
       let t;
-      $('#q').oninput = () => { clearTimeout(t); t = setTimeout(f, 200); };
-      f();
+      $('#q').oninput = () => { clearTimeout(t); t = setTimeout(render, 200); };
+      $('#fp').onchange = render;
+      $('#fc').onchange = render;
+      render();
     });
+
     return `
       <div class="cands-header">
-        <h1>Sondage – Candidats au Sénat <span class="cands-count" id="candsCount">${db.cands.filter(c => c.pub).length}</span></h1>
-        <p>Département du Nord-Ouest · Cliquez sur « Choisir » pour participer au sondage de votre commune.</p>
+        <h1>Candidats <span class="cands-count" id="candsCount">${db.cands.filter(c => c.pub).length}</span></h1>
+        <p id="candsSubtitle">Tous les postes — Département du Nord-Ouest</p>
       </div>
-      <div class="cands-search">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="q" placeholder="Rechercher un candidat par son nom…">
+
+      <div class="cands-filters">
+        <div class="cands-search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="q" placeholder="Rechercher un candidat par son nom…">
+        </div>
+        <select id="fp">
+          <option value="">Tous les postes</option>
+          ${opts(POSTS)}
+        </select>
+        <select id="fc">
+          <option value="">Toutes les communes</option>
+          ${opts(COMMUNES)}
+        </select>
       </div>
+
       <div id="cl" class="cands-grid"></div>
       <p class="cands-hint">Faites défiler la liste pour découvrir tous les candidats. Une seule préférence par participation.</p>`;
   };
@@ -758,12 +810,19 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           if (!p) return;
           const t = tally(p).t;
           if (!confirm(`⚠ Supprimer le sondage « ${p.title} » ?\n\nCette action effacera aussi les ${t} participation(s) associées.\nAction IRRÉVERSIBLE.`)) return;
-          const { error: rErr } = await supabase.from('poll_responses').delete().eq('poll_id', p.id);
-          if (rErr) { admToast('Échec suppression réponses : ' + rErr.message, 'err'); return; }
-          const { error: pcErr } = await supabase.from('poll_candidates').delete().eq('poll_id', p.id);
-          if (pcErr) { admToast('Échec suppression liens : ' + pcErr.message, 'err'); return; }
-          const { error: pErr } = await supabase.from('polls').delete().eq('id', p.id);
-          if (pErr) { admToast('Échec suppression sondage : ' + pErr.message, 'err'); return; }
+
+          // Utilisation de la fonction RPC delete_poll si disponible, sinon fallback manuel
+          const { error: rpcErr } = await supabase.rpc('delete_poll', { p_poll: p.id });
+          if (rpcErr) {
+            // Fallback : suppression manuelle dans le bon ordre
+            const { error: rErr } = await supabase.from('poll_responses').delete().eq('poll_id', p.id);
+            if (rErr) { admToast('Échec suppression réponses : ' + rErr.message, 'err'); return; }
+            const { error: pcErr } = await supabase.from('poll_candidates').delete().eq('poll_id', p.id);
+            if (pcErr) { admToast('Échec suppression liens : ' + pcErr.message, 'err'); return; }
+            const { error: pErr } = await supabase.from('polls').delete().eq('id', p.id);
+            if (pErr) { admToast('Échec suppression sondage : ' + pErr.message, 'err'); return; }
+          }
+
           await pushLog('Sondage supprimé : ' + p.title);
           await loadData();
           admToast('Sondage supprimé.', 'ok');
