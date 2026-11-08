@@ -3,8 +3,6 @@
 -- Peut être exécuté plusieurs fois sans erreur.
 -- ============================================================
 
--- pgcrypto est préinstallé par Supabase dans le schéma "extensions".
--- On le référence explicitement via extensions.digest() dans cast_vote().
 create extension if not exists pgcrypto with schema extensions;
 
 -- ---------- TABLES ----------
@@ -44,6 +42,7 @@ create table if not exists candidates (
   party_name text,
   position_type text not null check(position_type in('depute','magistrat_communal','casec','senateur')),
   commune_id uuid references communes,
+  commune_name text,
   biography text,
   program_summary text,
   publication_status text not null default 'draft' check(publication_status in('draft','published','archived')),
@@ -55,6 +54,7 @@ create table if not exists polls (
   title text not null,
   position_type text not null,
   commune_id uuid references communes,
+  commune_name text,
   participation_mode text not null default 'public' check(participation_mode in('public','account')),
   status text not null default 'draft' check(status in('draft','published','suspended','closed','archived')),
   starts_at timestamptz not null,
@@ -154,7 +154,7 @@ create policy adm_pol on polls for all using(is_admin());
 create policy adm_pc on poll_candidates for all using(is_admin());
 create policy adm_log on audit_logs for select using(is_admin());
 
--- poll_responses : aucune policy => aucun accès direct (uniquement via cast_vote et poll_results)
+-- poll_responses : aucune policy => aucun accès direct
 
 -- ---------- FONCTIONS RPC ----------
 create or replace function cast_vote(p_poll uuid, p_cand uuid, p_key text default null)
