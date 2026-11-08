@@ -1,6 +1,7 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
    Version fusionnée : cartes modernes + filtres universels.
+   Page Résultats restructurée (classes .result-*).
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -198,7 +199,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const postTag = c.post ? `<span class="tag blue">${esc(c.post)}</span>` : '';
     const communeTag = c.commune ? `<span class="tag">${esc(terr(c.commune))}</span>` : '<span class="tag">Département</span>';
 
-    // Chercher un sondage actif contenant ce candidat
     const activePoll = db.polls.find(p =>
       p.status === 'published'
       && (p.cands || []).includes(c.id)
@@ -242,18 +242,56 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const pub = () => db.polls.filter(p => p.status !== 'draft');
 
+  /* ============ RÉSULTATS — nouvelles classes ============ */
   const bars = p => {
     const t = tally(p);
-    if (!t.t) return '<p class="msg info">Aucune participation enregistrée pour le moment.</p>';
-    let html = `<p><b>${t.t}</b> participation(s) enregistrée(s)</p>`;
-    if (!canShow(p)) {
-      html += `<p class="msg info">Les résultats détaillés seront publiés après la clôture du sondage.</p>`;
-      return html;
+
+    if (!t.t) {
+      return `<div class="result-summary"><strong>0</strong> participation enregistrée</div>
+              <div class="result-empty">Aucune participation enregistrée pour le moment.</div>`;
     }
-    html += t.rows.sort((a, b) => b.n - a.n).map(r =>
-      `<p>${esc(nm(r.c))} — <b>${r.pct.toFixed(1)} %</b> (${r.n} vote${r.n > 1 ? 's' : ''})<div class="bar"><i style="width:${r.pct}%"></i></div></p>`
-    ).join('');
-    return html;
+
+    const summary = `<div class="result-summary"><strong>${t.t}</strong> participation${t.t > 1 ? 's' : ''} enregistrée${t.t > 1 ? 's' : ''}</div>`;
+
+    if (!canShow(p)) {
+      return summary + `<div class="result-pending">Les résultats détaillés seront publiés après la clôture du sondage.</div>`;
+    }
+
+    const sorted = t.rows.sort((a, b) => b.n - a.n);
+    const max = sorted[0]?.n || 0;
+
+    const rows = sorted.map((r, i) => {
+      const leading = (r.n === max && max > 0) ? ' leading' : '';
+      return `<li class="result-row${leading}">
+        <span class="result-rank">${i + 1}</span>
+        <div class="result-body">
+          <div class="result-top-line">
+            <span class="result-name">${esc(nm(r.c))}</span>
+            <span class="result-figures">
+              <span class="result-pct">${r.pct.toFixed(1)} %</span>
+              <span class="result-votes">${r.n} vote${r.n > 1 ? 's' : ''}</span>
+            </span>
+          </div>
+          <div class="result-bar"><i style="width:${r.pct}%"></i></div>
+        </div>
+      </li>`;
+    }).join('');
+
+    return summary + `<ul class="result-list">${rows}</ul>`;
+  };
+
+  const statusBadge = p => {
+    const s = status(p);
+    const map = {
+      'actif': 'active',
+      'fermé': 'closed',
+      'terminé': 'closed',
+      'brouillon': 'draft',
+      'programmé': 'scheduled',
+      'suspendu': 'suspended'
+    };
+    const cls = map[s] || 'draft';
+    return `<span class="result-badge ${cls}">${s}</span>`;
   };
 
   const opts = (a, sel) => a.map(x => `<option ${x === sel ? 'selected' : ''}>${esc(x)}</option>`).join('');
@@ -296,7 +334,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const count = $('#candsCount');
         if (count) count.textContent = items.length;
 
-        // Mise à jour du sous-titre (poste/commune)
         const subtitle = $('#candsSubtitle');
         if (subtitle) {
           const parts = [];
@@ -340,7 +377,43 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       <p class="cands-hint">Faites défiler la liste pour découvrir tous les candidats. Une seule préférence par participation.</p>`;
   };
 
-  P['/resultats'] = () => `<h1>Résultats</h1>${pub().map(p => `<div class="card"><b>${esc(p.title)}</b> <span class="tag">${status(p)}</span>${bars(p)}</div>`).join('') || '<p class="msg info">Aucun sondage.</p>'}<p class="muted">Ces pourcentages décrivent les participants de la plateforme, pas la population.</p>`;
+  /* ============ PAGE RÉSULTATS — restructurée ============ */
+  P['/resultats'] = () => {
+    const polls = pub();
+    const sections = polls.map(p => {
+      return `<section class="result-section">
+        <div class="result-section-head">
+          <div>
+            <h2>${esc(p.title)}</h2>
+            <p class="muted" style="margin:0.35rem 0 0;font-size:0.82rem">
+              ${esc(p.post)} · ${esc(terr(p.commune))}
+            </p>
+          </div>
+          <div class="result-meta">${statusBadge(p)}</div>
+        </div>
+        ${bars(p)}
+      </section>`;
+    }).join('');
+
+    return `
+      <div class="results-header">
+        <h1>Résultats</h1>
+        <p>Consultez les résultats des sondages publiés sur la plateforme.</p>
+      </div>
+
+      <div class="results-intro">
+        <strong>À propos des résultats.</strong>
+        Ces pourcentages décrivent uniquement les préférences exprimées par les
+        participants de la plateforme. Ils ne constituent pas un échantillon
+        représentatif de la population et ne remplacent pas un résultat électoral officiel.
+      </div>
+
+      ${sections || '<div class="result-empty">Aucun sondage publié pour le moment.</div>'}
+
+      <p class="results-footnote">
+        Ces pourcentages décrivent les participants de la plateforme, pas la population.
+      </p>`;
+  };
 
   P['/methodologie'] = () => `<h1>Méthodologie</h1><div class="card"><p>Plateforme de sondages d'opinion <b>non officielle</b> : aucun lien avec le CEP.</p><p>Les participants ne sont pas un échantillon représentatif.</p></div>`;
 
@@ -811,10 +884,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           const t = tally(p).t;
           if (!confirm(`⚠ Supprimer le sondage « ${p.title} » ?\n\nCette action effacera aussi les ${t} participation(s) associées.\nAction IRRÉVERSIBLE.`)) return;
 
-          // Utilisation de la fonction RPC delete_poll si disponible, sinon fallback manuel
           const { error: rpcErr } = await supabase.rpc('delete_poll', { p_poll: p.id });
           if (rpcErr) {
-            // Fallback : suppression manuelle dans le bon ordre
             const { error: rErr } = await supabase.from('poll_responses').delete().eq('poll_id', p.id);
             if (rErr) { admToast('Échec suppression réponses : ' + rErr.message, 'err'); return; }
             const { error: pcErr } = await supabase.from('poll_candidates').delete().eq('poll_id', p.id);
