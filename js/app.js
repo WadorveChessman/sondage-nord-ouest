@@ -1,7 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
-   Version fusionnée : cartes modernes + filtres universels.
-   Page Résultats restructurée (classes .result-*).
+   Version finale : commune_name intégré (candidats + sondages).
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -95,7 +94,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         party: c.party_name || '',
         post: POSITION_LABELS[c.position_type] || c.position_type,
         post_code: c.position_type,
-        commune: c.commune_id || '',
+        commune: c.commune_name || '',
         photo: c.photo_url || '',
         bio: c.biography || '',
         pub: c.publication_status === 'published',
@@ -107,7 +106,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         title: p.title,
         post: POSITION_LABELS[p.position_type] || p.position_type,
         post_code: p.position_type,
-        commune: p.commune_id || '',
+        commune: p.commune_name || '',
         start: p.starts_at,
         end: p.ends_at,
         vis: p.results_visibility === 'live' ? 'live' : 'after',
@@ -242,7 +241,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const pub = () => db.polls.filter(p => p.status !== 'draft');
 
-  /* ============ RÉSULTATS — nouvelles classes ============ */
   const bars = p => {
     const t = tally(p);
 
@@ -306,7 +304,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       ['Candidats', db.cands.filter(c => c.pub).length],
       ['Sondages actifs', act.length],
       ['Participations', db.resp.length],
-      ['Communes couvertes', new Set(db.polls.map(p => p.commune).filter(Boolean)).size]
+      ['Communes couvertes', new Set(db.cands.map(c => c.commune).filter(Boolean)).size]
     ].map(([l, v]) => `<div class="card"><div class="stat">${v}</div>${l}</div>`).join('')}</div>
     <h2>Sondages en cours</h2><div class="grid">${act.map(pollCard).join('') || '<p class="msg info">Aucun sondage actif.</p>'}</div>
     <h2>Candidats à découvrir</h2><div class="grid">${db.cands.filter(c => c.pub).slice(0, 6).map(candCard).join('') || '<p class="msg info">Aucun candidat publié pour le moment.</p>'}</div>`;
@@ -377,7 +375,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       <p class="cands-hint">Faites défiler la liste pour découvrir tous les candidats. Une seule préférence par participation.</p>`;
   };
 
-  /* ============ PAGE RÉSULTATS — restructurée ============ */
   P['/resultats'] = () => {
     const polls = pub();
     const sections = polls.map(p => {
@@ -754,7 +751,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             last_name: f.last.trim(),
             party_name: f.party.trim() || null,
             position_type: POSITION_CODES[f.post],
-            commune_id: null,
+            commune_name: f.commune || null,
             photo_url: curPhoto || null,
             biography: f.bio || null,
             publication_status: f.pub ? 'published' : 'draft'
@@ -806,7 +803,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           const pollPayload = {
             title: g('title').trim(),
             position_type: POSITION_CODES[g('post')],
-            commune_id: null,
+            commune_name: g('commune') || null,
             participation_mode: 'public',
             status: g('status') === 'draft' ? 'draft' : 'published',
             starts_at: g('start'),
