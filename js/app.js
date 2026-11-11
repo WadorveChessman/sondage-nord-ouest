@@ -1,6 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
-   Version complète et finale.
+   Version finale et corrigée.
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -276,6 +276,30 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
     const urlParams = new URLSearchParams(location.hash.split('?')[1] || '');
     const preselectedId = urlParams.get('cand');
+    const cs = db.cands.filter(c => (p.cands || []).includes(c.id) && c.pub);
+
+    const renderRow = (c) => {
+      const initials = ((c.first[0] || '') + (c.last[0] || '')).toUpperCase();
+      const ph = c.photo ? `<img src="${esc(c.photo)}" alt="">` : initials;
+      return `
+        <div class="pick-row" data-id="${c.id}">
+          <div class="pick-avatar">${ph}</div>
+          <div class="pick-info">
+            <b>${esc(nm(c))}</b>
+            <small>${esc(c.party || 'Indépendant')}</small>
+          </div>
+          <button class="btn" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Choisir</button>
+        </div>`;
+    };
+
+    const bindRowEvents = () => {
+      document.querySelectorAll('.pick-row').forEach(el => {
+        el.onclick = () => {
+          const c = db.cands.find(x => x.id === el.dataset.id);
+          if (c) openConfirmModal(c);
+        };
+      });
+    };
 
     function openConfirmModal(candidate) {
       const back = document.createElement('div');
@@ -333,37 +357,26 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     setTimeout(() => {
       if (preselectedId) {
-        const candidate = db.cands.find(c => c.id === preselectedId);
+        const candidate = cs.find(c => c.id === preselectedId);
         if (candidate) openConfirmModal(candidate);
       }
 
-      document.querySelectorAll('.pick-row').forEach(el => el.onclick = () => {
-        const c = db.cands.find(x => x.id === el.dataset.id);
-        if (c) openConfirmModal(c);
-      });
+      bindRowEvents();
 
-      // Barre de recherche
       const searchInput = $('#searchCandidate');
       if (searchInput) {
         searchInput.oninput = (e) => {
-          const query = e.target.value.toLowerCase();
-          const list = db.cands.filter(c => (p.cands || []).includes(c.id) && c.pub && nm(c).toLowerCase().includes(query));
-          $('#candidateList').innerHTML = list.map(c => {
-            const initials = ((c.first[0] || '') + (c.last[0] || '')).toUpperCase();
-            const ph = c.photo ? `<img src="${esc(c.photo)}" alt="">` : initials;
-            return `<div class="pick-row" data-id="${c.id}"><div class="pick-avatar">${ph}</div><div class="pick-info"><b>${esc(nm(c))}</b><small>${esc(c.party || 'Indépendant')}</small></div><button class="btn" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Choisir</button></div>`;
-          }).join('') || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>';
+          const query = e.target.value.toLowerCase().trim();
+          const filtered = cs.filter(c => nm(c).toLowerCase().includes(query));
           
-          document.querySelectorAll('.pick-row').forEach(el => el.onclick = () => {
-            const c = db.cands.find(x => x.id === el.dataset.id);
-            if (c) openConfirmModal(c);
-          });
+          $('#candidateList').innerHTML = filtered.map(renderRow).join('') 
+            || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>';
+          
+          bindRowEvents();
         };
       }
     });
 
-    const cs = db.cands.filter(c => (p.cands || []).includes(c.id) && c.pub);
-    
     return `
       <div class="poll-header">
         <h1>${esc(p.title)}</h1>
@@ -375,19 +388,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       </div>
 
       <div id="candidateList" class="candidate-list">
-        ${cs.map(c => {
-          const initials = ((c.first[0] || '') + (c.last[0] || '')).toUpperCase();
-          const ph = c.photo ? `<img src="${esc(c.photo)}" alt="">` : initials;
-          return `
-            <div class="pick-row" data-id="${c.id}">
-              <div class="pick-avatar">${ph}</div>
-              <div class="pick-info">
-                <b>${esc(nm(c))}</b>
-                <small>${esc(c.party || 'Indépendant')}</small>
-              </div>
-              <button class="btn" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Choisir</button>
-            </div>`;
-        }).join('') || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>'}
+        ${cs.map(renderRow).join('') || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>'}
       </div>`;
   };
 
@@ -566,11 +567,10 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if (location.hash !== '#/admin') return; if (!isAdmin()) return;
         const btn = e.target.closest('[data-a]'); if (!btn) return; const d = btn.dataset;
 
-        // CONTRÔLE STRICT : Vérifier si le sondage est clôturé avant toute action
         if (d.a !== 'reset' && d.a !== 'out' && d.a !== 'print' && d.a !== 'csv') {
            const p = db.polls.find(x => x.id === d.id);
            if (p && (p.status === 'closed' || status(p) === 'terminé')) {
-               admToast('Action refusée : ce sondage est clôturé et ne peut plus être modifié.', 'warn');
+               admToast('Action refusée : ce sondage est clôturé.', 'warn');
                return;
            }
         }
