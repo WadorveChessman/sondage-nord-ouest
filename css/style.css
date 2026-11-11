@@ -1481,3 +1481,13 @@ footer a:hover {
 /* --- Ajustement Accueil --- */
 .hero { padding: 4rem 2.5rem; }
 .hero h1 { font-size: clamp(2rem, 5vw, 3rem); }
+
+/* --- Bouton Choisir dans la liste --- */
+.pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* Pousse le bouton à droite */
+}
+.pick-row .btn {
+  flex-shrink: 0;
+}
