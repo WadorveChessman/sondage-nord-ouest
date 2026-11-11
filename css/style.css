@@ -1424,3 +1424,60 @@ footer a:hover {
   .result-figures { font-size: 0.8rem; }
   .result-pct { font-size: 0.9rem; }
 }
+
+/* ============================================================
+   NOUVELLES PAGES PRO (Participation, Méthodo, À propos)
+   ============================================================ */
+
+/* --- Page Header Universel --- */
+.page-header { margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--bd); }
+.page-header h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 0.5rem; color: var(--tx); }
+.page-header p { font-size: 1.05rem; color: var(--tx-soft); margin: 0; }
+
+/* --- Page Contenu (Méthodo / À propos) --- */
+.content-card { background: var(--card); border: 1px solid var(--bd); border-radius: var(--radius-lg); padding: 2.5rem; box-shadow: var(--shadow-sm); max-width: 800px; }
+.content-card h2 { font-size: 1.25rem; font-weight: 700; margin: 2rem 0 0.75rem; color: var(--tx); }
+.content-card h2:first-child { margin-top: 0; }
+.content-card p { font-size: 1rem; line-height: 1.7; color: var(--tx-soft); margin-bottom: 1.25rem; }
+.contact-card { margin-top: 2rem; padding: 1.5rem; background: var(--bg); border-radius: var(--radius); border-left: 4px solid var(--accent); }
+.contact-card h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--tx-mute); margin-bottom: 0.5rem; }
+.contact-card p { margin-bottom: 0.25rem; font-size: 1rem; font-weight: 500; }
+.contact-card a { color: var(--blue-600); text-decoration: underline; }
+
+/* --- Page Participation (Liste verticale) --- */
+.poll-header { margin-bottom: 1.5rem; }
+.poll-header h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.25rem; }
+.poll-header p { color: var(--tx-soft); font-size: 0.95rem; }
+
+.search-bar { position: relative; margin-bottom: 1.5rem; }
+.search-bar input { width: 100%; padding: 1rem 1rem 1rem 3rem; font-size: 1rem; border: 1.5px solid var(--bd); border-radius: var(--radius-lg); background: var(--card); color: var(--tx); box-shadow: var(--shadow-sm); }
+.search-bar::before { content: '🔍'; position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); font-size: 1.1rem; opacity: 0.5; pointer-events: none; }
+
+.candidate-list { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 2rem; }
+.pick-row { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; background: var(--card); border: 1.5px solid var(--bd); border-radius: var(--radius-lg); cursor: pointer; transition: var(--transition); }
+.pick-row:hover { border-color: var(--blue-400); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.pick-row.sel { border-color: var(--blue-500); background: rgba(30, 127, 212, 0.04); box-shadow: 0 0 0 3px rgba(30, 127, 212, 0.15); }
+
+.pick-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, var(--blue-600), var(--blue-400)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; flex-shrink: 0; overflow: hidden; }
+.pick-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.pick-info { flex: 1; min-width: 0; }
+.pick-info b { display: block; font-size: 1.05rem; font-weight: 700; color: var(--tx); }
+.pick-info small { display: block; font-size: 0.85rem; color: var(--tx-soft); }
+
+.pick-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--bd); display: flex; align-items: center; justify-content: center; transition: var(--transition); }
+.pick-check svg { width: 14px; height: 14px; stroke: #fff; stroke-width: 3; fill: none; opacity: 0; transition: var(--transition); }
+.pick-row.sel .pick-check { background: var(--blue-500); border-color: var(--blue-500); }
+.pick-row.sel .pick-check svg { opacity: 1; }
+
+.vote-footer { position: sticky; bottom: 0; background: var(--bg); padding: 1.5rem 0; border-top: 1px solid var(--bd); text-align: center; z-index: 10; }
+
+/* --- Page Succès (après vote) --- */
+.success-card { text-align: center; max-width: 500px; margin: 4rem auto; padding: 3rem 2rem; background: var(--card); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); border: 1px solid var(--bd); }
+.success-icon { width: 80px; height: 80px; margin: 0 auto 1.5rem; background: rgba(16, 185, 129, 0.1); color: var(--ok); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: bold; }
+.success-card h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.75rem; color: var(--tx); }
+.success-card p { color: var(--tx-soft); margin-bottom: 2rem; }
+
+/* --- Ajustement Accueil --- */
+.hero { padding: 4rem 2.5rem; }
+.hero h1 { font-size: clamp(2rem, 5vw, 3rem); }
