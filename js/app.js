@@ -1,6 +1,6 @@
 /* ============================================================
    SONDAGE NORD-OUEST — Backend Supabase (PostgreSQL + Auth)
-   Version complète et finale.
+   Version finale : Recherche + Modal de confirmation.
    ============================================================ */
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -266,7 +266,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       </div>
     </div>`;
 
-    /* ============ PAGE PARTICIPER (Recherche + Modal) ============ */
+  /* ============ PAGE PARTICIPER (Recherche + Modal) ============ */
   P['/participer'] = id => {
     const p = db.polls.find(x => x.id === id);
     if (!p) return '<p class="msg err">Sondage introuvable.</p>';
@@ -394,54 +394,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
       <div id="candidateList" class="candidate-list">
         ${cs.map(renderRow).join('') || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>'}
-      </div>`;
-  };
-      // Barre de recherche
-      const searchInput = $('#searchCandidate');
-      if (searchInput) {
-        searchInput.oninput = (e) => {
-          const query = e.target.value.toLowerCase();
-          const list = db.cands.filter(c => (p.cands || []).includes(c.id) && c.pub && nm(c).toLowerCase().includes(query));
-          $('#candidateList').innerHTML = list.map(c => {
-            const initials = ((c.first[0] || '') + (c.last[0] || '')).toUpperCase();
-            const ph = c.photo ? `<img src="${esc(c.photo)}" alt="">` : initials;
-            return `<div class="pick-row" data-id="${c.id}"><div class="pick-avatar">${ph}</div><div class="pick-info"><b>${esc(nm(c))}</b><small>${esc(c.party || 'Indépendant')}</small></div><button class="btn" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Choisir</button></div>`;
-          }).join('') || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>';
-          
-          document.querySelectorAll('.pick-row').forEach(el => el.onclick = () => {
-            const c = db.cands.find(x => x.id === el.dataset.id);
-            if (c) openConfirmModal(c);
-          });
-        };
-      }
-    });
-
-    const cs = db.cands.filter(c => (p.cands || []).includes(c.id) && c.pub);
-    
-    return `
-      <div class="poll-header">
-        <h1>${esc(p.title)}</h1>
-        <p>${esc(p.post)} — ${esc(terr(p.commune))}</p>
-      </div>
-      
-      <div class="search-bar">
-        <input id="searchCandidate" placeholder="Rechercher un candidat par son nom...">
-      </div>
-
-      <div id="candidateList" class="candidate-list">
-        ${cs.map(c => {
-          const initials = ((c.first[0] || '') + (c.last[0] || '')).toUpperCase();
-          const ph = c.photo ? `<img src="${esc(c.photo)}" alt="">` : initials;
-          return `
-            <div class="pick-row" data-id="${c.id}">
-              <div class="pick-avatar">${ph}</div>
-              <div class="pick-info">
-                <b>${esc(nm(c))}</b>
-                <small>${esc(c.party || 'Indépendant')}</small>
-              </div>
-              <button class="btn" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Choisir</button>
-            </div>`;
-        }).join('') || '<p class="muted" style="text-align:center;padding:1rem">Aucun candidat trouvé.</p>'}
       </div>`;
   };
 
